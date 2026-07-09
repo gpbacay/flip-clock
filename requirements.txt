@@ -1,0 +1,5 @@
+nicegui>=2.0
+pyautogui
+keyboard
+pywebview
+pyinstaller
