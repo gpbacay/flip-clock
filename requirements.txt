@@ -3,3 +3,4 @@ pyautogui
 keyboard
 pywebview
 pyinstaller
+pywin32; sys_platform == "win32"

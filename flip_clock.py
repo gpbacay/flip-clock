@@ -42,6 +42,14 @@ try:
 except ImportError:
     HAS_KEYBOARD = False
 
+try:
+    import win32con
+    import win32gui
+
+    HAS_WIN32 = True
+except ImportError:
+    HAS_WIN32 = False
+
 
 def _app_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -479,40 +487,107 @@ def _press_key(key: str) -> None:
     raise RuntimeError("Install keyboard or pyautogui to send key presses.")
 
 
+def _focus_chrome_window() -> bool:
+    """Bring the first visible Chrome window to the foreground, if possible."""
+    if not HAS_WIN32:
+        return False
+
+    handles: list[int] = []
+
+    def _enum(hwnd, _acc):
+        if win32gui.IsWindowVisible(hwnd) and win32gui.GetClassName(hwnd) == "Chrome_WidgetWin_1":
+            if win32gui.GetWindowText(hwnd):
+                handles.append(hwnd)
+
+    try:
+        win32gui.EnumWindows(_enum, None)
+        if not handles:
+            return False
+        hwnd = handles[0]
+        if win32gui.IsIconic(hwnd):
+            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+        win32gui.SetForegroundWindow(hwnd)
+        return True
+    except Exception:
+        return False
+
+
+def _minimize_window() -> None:
+    """Minimize the flip clock's native window, if running in native mode."""
+    try:
+        window = app.native.main_window
+        if window is not None:
+            window.minimize()
+    except Exception:
+        pass
+
+
 class TimeTriggerEngine:
-    """Runs the configured click/keypress loop in a background thread."""
+    """Runs one or more configured click/keypress loops concurrently.
+
+    Each enabled trigger type (mouse click, keyboard key, scroll, Chrome tab
+    switch) gets its own background thread and its own stop event, so e.g.
+    "Mouse Click" and "Chrome Tab Switch" run in parallel instead of being
+    mutually exclusive.
+    """
 
     def __init__(self, log_callback=None):
-        self._thread = None
-        self._stop_event = threading.Event()
-        self.running = False
+        self._threads: dict[str, threading.Thread] = {}
+        self._stop_events: dict[str, threading.Event] = {}
         self.log = log_callback or (lambda msg: None)
 
-    def start(self, config):
-        if self.running:
-            return
-        self._stop_event.clear()
-        self.running = True
-        self._thread = threading.Thread(target=self._run, args=(config,), daemon=True)
-        self._thread.start()
+    @property
+    def running(self) -> bool:
+        return any(t.is_alive() for t in self._threads.values())
+
+    def active_modes(self) -> list[str]:
+        return [mode for mode, t in self._threads.items() if t.is_alive()]
+
+    def start(self, configs):
+        """Start one thread per config. `configs` may be a single dict
+        (back-compat) or a list of per-trigger config dicts."""
+        if isinstance(configs, dict):
+            configs = [configs]
+
+        for config in configs:
+            mode = config["mode"]
+            existing = self._threads.get(mode)
+            if existing is not None and existing.is_alive():
+                continue  # already running this trigger type
+            stop_event = threading.Event()
+            self._stop_events[mode] = stop_event
+            thread = threading.Thread(target=self._run, args=(config, stop_event), daemon=True)
+            self._threads[mode] = thread
+            thread.start()
 
     def stop(self):
-        self._stop_event.set()
-        self.running = False
+        for stop_event in self._stop_events.values():
+            stop_event.set()
+        self._threads.clear()
+        self._stop_events.clear()
 
-    def _run(self, config):
+    def _run(self, config, stop_event):
         mode = config["mode"]
         interval = config["interval"]
         repeats = config["repeats"]
         x, y = config.get("x"), config.get("y")
         button = config.get("button", "left")
         key = config.get("key", "space")
+        scroll_direction = config.get("scroll_direction", "down")
+        scroll_amount = config.get("scroll_amount", 5)
+        tab_direction = config.get("tab_direction", "next")
+        focus_chrome = config.get("focus_chrome", True)
 
         count = 0
-        label = "mouse click" if mode == "mouse" else f"key '{key}'"
-        self.log(f"Time trigger started ({label}) every {interval}s")
+        labels = {
+            "mouse": "mouse click",
+            "keyboard": f"key '{key}'",
+            "scroll": f"mouse scroll ({scroll_direction})",
+            "chrome_tab": f"chrome tab switch ({tab_direction})",
+        }
+        self.log(f"Time trigger started ({labels.get(mode, mode)}) every {interval}s")
 
-        while not self._stop_event.is_set():
+        while not stop_event.is_set():
             if repeats and count >= repeats:
                 break
 
@@ -524,6 +599,22 @@ class TimeTriggerEngine:
                     else:
                         self.log("ERROR: pyautogui not installed. Run: pip install pyautogui")
                         break
+                elif mode == "scroll":
+                    if HAS_PYAUTOGUI:
+                        clicks = scroll_amount if scroll_direction == "up" else -scroll_amount
+                        pyautogui.scroll(clicks, x=x, y=y)
+                        where = f" at ({x}, {y})" if x is not None else ""
+                        self.log(f"Scrolled {scroll_direction} {scroll_amount}{where}  [#{count + 1}]")
+                    else:
+                        self.log("ERROR: pyautogui not installed. Run: pip install pyautogui")
+                        break
+                elif mode == "chrome_tab":
+                    if focus_chrome:
+                        if not _focus_chrome_window():
+                            self.log("WARNING: Chrome window not found; sending shortcut to current focus.")
+                    combo = "ctrl+tab" if tab_direction == "next" else "ctrl+shift+tab"
+                    _press_key(combo)
+                    self.log(f"Switched Chrome tab ({tab_direction})  [#{count + 1}]")
                 else:
                     _press_key(key)
                     self.log(f"Pressed {_format_key_combo(_parse_key_combo(key))}  [#{count + 1}]")
@@ -535,13 +626,12 @@ class TimeTriggerEngine:
             slept = 0.0
             step = 0.05
             while slept < interval:
-                if self._stop_event.is_set():
+                if stop_event.is_set():
                     break
                 time.sleep(min(step, interval - slept))
                 slept += step
 
-        self.running = False
-        self.log("Time trigger stopped.")
+        self.log(f"Time trigger stopped ({labels.get(mode, mode)}).")
 
 
 # =========================================================================
@@ -631,11 +721,18 @@ def _build_time_triggers_panel(dialog_close):
             "settings-close-btn"
         ).tooltip("Close")
 
-    ui.label("Repeat mouse clicks or keyboard presses on a timer.").classes("text-caption text-grey")
+    ui.label(
+        "Repeat mouse clicks, keyboard presses, scrolling, or Chrome tab switching on a timer. "
+        "Enable more than one — they run in parallel, each on its own thread."
+    ).classes("text-caption text-grey")
 
     with ui.element("div").classes("triggers-section"):
-        ui.label("Trigger type").classes("text-subtitle2 q-mb-xs")
-        mode = ui.radio(["Mouse Click", "Keyboard Key"], value="Mouse Click").props("inline dense")
+        ui.label("Trigger types (select any combination)").classes("text-subtitle2 q-mb-xs")
+        with ui.row().classes("w-full q-gutter-md items-center"):
+            enable_mouse_chk = ui.checkbox("Mouse Click", value=True)
+            enable_key_chk = ui.checkbox("Keyboard Key")
+            enable_scroll_chk = ui.checkbox("Mouse Scroll")
+            enable_chrome_chk = ui.checkbox("Chrome Tab Switch")
 
     with ui.element("div").classes("triggers-section") as mouse_section:
         ui.label("Mouse target").classes("text-subtitle2 q-mb-xs")
@@ -659,20 +756,67 @@ def _build_time_triggers_panel(dialog_close):
             "text-caption text-grey q-mt-xs"
         )
 
+    with ui.element("div").classes("triggers-section") as scroll_section:
+        ui.label("Scroll settings").classes("text-subtitle2 q-mb-xs")
+        with ui.row().classes("w-full q-gutter-sm items-center"):
+            scroll_direction_select = ui.select(["Down", "Up"], value="Down", label="Direction").classes("col")
+            scroll_amount_input = ui.number("Amount (clicks)", value=5, min=1, step=1, format="%.0f").classes(
+                "col"
+            )
+        with ui.row().classes("w-full q-mt-sm items-center"):
+            scroll_interval_input = ui.number(
+                "Scroll every (sec)", value=1.0, min=0.05, step=0.1
+            ).classes("col")
+        ui.label("Uses its own timer above, independent of the shared Schedule interval below.").classes(
+            "text-caption text-grey q-mt-xs"
+        )
+        scroll_here_chk = ui.checkbox("Scroll at current cursor position", value=True)
+        with ui.row().classes("w-full q-mt-sm items-center") as scroll_pos_row:
+            scroll_x_input = ui.number("X", value=500, format="%.0f").classes("col")
+            scroll_y_input = ui.number("Y", value=500, format="%.0f").classes("col")
+            scroll_pick_btn = ui.button("Pick Location", icon="my_location").props("outline dense")
+        scroll_pos_row.set_visibility(False)
+        scroll_here_chk.on_value_change(lambda: scroll_pos_row.set_visibility(not scroll_here_chk.value))
+
+    with ui.element("div").classes("triggers-section") as chrome_section:
+        ui.label("Chrome tab switching").classes("text-subtitle2 q-mb-xs")
+        tab_direction_radio = ui.radio(["Next", "Previous"], value="Next").props("inline dense")
+        focus_chrome_chk = ui.checkbox("Bring Chrome window to front first", value=True)
+        with ui.row().classes("w-full q-mt-sm items-center"):
+            chrome_interval_input = ui.number(
+                "Switch tabs every (sec)", value=5.0, min=0.1, step=0.5
+            ).classes("col")
+        ui.label("Sends Ctrl+Tab / Ctrl+Shift+Tab to cycle through open Chrome tabs.").classes(
+            "text-caption text-grey q-mt-xs"
+        )
+        ui.label("Uses its own timer above, independent of the shared Schedule interval below.").classes(
+            "text-caption text-grey"
+        )
+        if not HAS_WIN32:
+            ui.label("NOTE: install 'pywin32' to auto-focus Chrome before switching.").classes(
+                "text-caption text-orange q-mt-xs"
+            )
+
     with ui.element("div").classes("triggers-section"):
         ui.label("Schedule").classes("text-subtitle2 q-mb-xs")
+        ui.label(
+            "Applies to Mouse Click / Keyboard Key. "
+            "Mouse Scroll and Chrome Tab Switch use their own intervals above."
+        ).classes("text-caption text-grey")
         with ui.row().classes("w-full q-gutter-sm q-mt-sm"):
             interval_input = ui.number("Interval (sec)", value=1.0, min=0.05, step=0.1).classes("col")
             repeats_input = ui.number("Repeats (0 = ∞)", value=0, min=0, step=1, format="%.0f").classes("col")
             delay_input = ui.number("Start delay (sec)", value=3, min=0, step=1, format="%.0f").classes("col")
 
-    def refresh_mode():
-        is_mouse = mode.value == "Mouse Click"
-        mouse_section.set_visibility(is_mouse)
-        key_section.set_visibility(not is_mouse)
+    def refresh_visibility():
+        mouse_section.set_visibility(enable_mouse_chk.value)
+        key_section.set_visibility(enable_key_chk.value)
+        scroll_section.set_visibility(enable_scroll_chk.value)
+        chrome_section.set_visibility(enable_chrome_chk.value)
 
-    mode.on_value_change(refresh_mode)
-    refresh_mode()
+    for _chk in (enable_mouse_chk, enable_key_chk, enable_scroll_chk, enable_chrome_chk):
+        _chk.on_value_change(refresh_visibility)
+    refresh_visibility()
 
     with ui.row().classes("w-full q-mt-md q-gutter-sm"):
         start_btn = ui.button("Start", icon="play_arrow", color="green").classes("col")
@@ -680,7 +824,7 @@ def _build_time_triggers_panel(dialog_close):
         stop_btn.disable()
 
     hotkey_note = (
-        "Global hotkey F6 toggles start/stop"
+        "Global hotkey F6 toggles start/stop and minimizes the clock window"
         if HAS_KEYBOARD
         else "Install 'keyboard' for global F6 hotkey"
     )
@@ -711,28 +855,34 @@ def _build_time_triggers_panel(dialog_close):
     if not HAS_KEYBOARD:
         append_log("NOTE: install 'keyboard' for reliable key triggers and F6 hotkey")
 
-    def pick_location():
-        if not HAS_PYAUTOGUI:
-            ui.notify("Install pyautogui first: pip install pyautogui", type="negative")
-            return
-        append_log("Move mouse to target... capturing in 3 seconds.")
-        start_btn.disable()
+    def make_pick_location(target_x_input, target_y_input, trigger_btn):
+        def pick_location():
+            if not HAS_PYAUTOGUI:
+                ui.notify("Install pyautogui first: pip install pyautogui", type="negative")
+                return
+            append_log("Move mouse to target... capturing in 3 seconds.")
+            trigger_btn.disable()
+            start_btn.disable()
 
-        def countdown():
-            for i in (3, 2, 1):
-                enqueue_log(f"Capturing in {i}...")
-                time.sleep(1)
-            pos = pyautogui.position()
-            x_input.value = pos.x
-            y_input.value = pos.y
-            x_input.update()
-            y_input.update()
-            enqueue_log(f"Captured location: ({pos.x}, {pos.y})")
-            start_btn.enable()
+            def countdown():
+                for i in (3, 2, 1):
+                    enqueue_log(f"Capturing in {i}...")
+                    time.sleep(1)
+                pos = pyautogui.position()
+                target_x_input.value = pos.x
+                target_y_input.value = pos.y
+                target_x_input.update()
+                target_y_input.update()
+                enqueue_log(f"Captured location: ({pos.x}, {pos.y})")
+                trigger_btn.enable()
+                start_btn.enable()
 
-        threading.Thread(target=countdown, daemon=True).start()
+            threading.Thread(target=countdown, daemon=True).start()
 
-    pick_btn.on_click(pick_location)
+        return pick_location
+
+    pick_btn.on_click(make_pick_location(x_input, y_input, pick_btn))
+    scroll_pick_btn.on_click(make_pick_location(scroll_x_input, scroll_y_input, scroll_pick_btn))
 
     def _resolved_key() -> str:
         custom = (key_input.value or "").strip()
@@ -756,7 +906,11 @@ def _build_time_triggers_panel(dialog_close):
             parts.append(main)
         return _format_key_combo(parts) if parts else "space"
 
-    def gather_config():
+    def gather_configs():
+        """Build one config per enabled trigger-type checkbox. All enabled
+        types share the same schedule and start together, but each runs on
+        its own thread — e.g. Mouse Click and Chrome Tab Switch can both be
+        enabled and will run in parallel, not one at a time."""
         try:
             interval = max(0.05, float(interval_input.value or 1))
         except (TypeError, ValueError):
@@ -772,47 +926,108 @@ def _build_time_triggers_panel(dialog_close):
         except (TypeError, ValueError):
             delay = 0
 
-        is_mouse = mode.value == "Mouse Click"
-        cfg = {
-            "mode": "mouse" if is_mouse else "keyboard",
-            "interval": interval,
-            "repeats": repeats,
-            "delay": delay,
+        selected_types = []
+        if enable_mouse_chk.value:
+            selected_types.append("Mouse Click")
+        if enable_key_chk.value:
+            selected_types.append("Keyboard Key")
+        if enable_scroll_chk.value:
+            selected_types.append("Mouse Scroll")
+        if enable_chrome_chk.value:
+            selected_types.append("Chrome Tab Switch")
+
+        if not selected_types:
+            ui.notify("Select at least one trigger type.", type="negative")
+            return None
+
+        mode_map = {
+            "Mouse Click": "mouse",
+            "Keyboard Key": "keyboard",
+            "Mouse Scroll": "scroll",
+            "Chrome Tab Switch": "chrome_tab",
         }
 
-        if is_mouse:
-            if not HAS_PYAUTOGUI:
-                ui.notify("Mouse triggers require pyautogui.", type="negative")
-                return None
-            try:
-                cfg["x"] = int(x_input.value)
-                cfg["y"] = int(y_input.value)
-            except (TypeError, ValueError):
-                ui.notify("X and Y must be integers.", type="negative")
-                return None
-            cfg["button"] = button_select.value
-        else:
-            key = _resolved_key()
-            if not key:
-                ui.notify("Please choose or enter a key to press.", type="negative")
-                return None
-            if not HAS_KEYBOARD and not HAS_PYAUTOGUI:
-                ui.notify("Install keyboard or pyautogui for key triggers.", type="negative")
-                return None
-            cfg["key"] = key
+        configs = []
+        for selected in selected_types:
+            cfg = {
+                "mode": mode_map[selected],
+                "interval": interval,
+                "repeats": repeats,
+                "delay": delay,
+            }
 
-        return cfg
+            if selected == "Mouse Click":
+                if not HAS_PYAUTOGUI:
+                    ui.notify("Mouse triggers require pyautogui.", type="negative")
+                    return None
+                try:
+                    cfg["x"] = int(x_input.value)
+                    cfg["y"] = int(y_input.value)
+                except (TypeError, ValueError):
+                    ui.notify("X and Y must be integers.", type="negative")
+                    return None
+                cfg["button"] = button_select.value
+            elif selected == "Mouse Scroll":
+                if not HAS_PYAUTOGUI:
+                    ui.notify("Mouse scroll requires pyautogui.", type="negative")
+                    return None
+                try:
+                    cfg["interval"] = max(0.05, float(scroll_interval_input.value or 1))
+                except (TypeError, ValueError):
+                    ui.notify("Scroll interval must be a number.", type="negative")
+                    return None
+                try:
+                    cfg["scroll_amount"] = max(1, int(scroll_amount_input.value or 5))
+                except (TypeError, ValueError):
+                    ui.notify("Scroll amount must be an integer.", type="negative")
+                    return None
+                cfg["scroll_direction"] = (scroll_direction_select.value or "Down").lower()
+                if scroll_here_chk.value:
+                    cfg["x"] = None
+                    cfg["y"] = None
+                else:
+                    try:
+                        cfg["x"] = int(scroll_x_input.value)
+                        cfg["y"] = int(scroll_y_input.value)
+                    except (TypeError, ValueError):
+                        ui.notify("X and Y must be integers.", type="negative")
+                        return None
+            elif selected == "Chrome Tab Switch":
+                try:
+                    cfg["interval"] = max(0.1, float(chrome_interval_input.value or 5))
+                except (TypeError, ValueError):
+                    ui.notify("Chrome tab switch interval must be a number.", type="negative")
+                    return None
+                cfg["tab_direction"] = "next" if tab_direction_radio.value == "Next" else "previous"
+                cfg["focus_chrome"] = bool(focus_chrome_chk.value)
+                if not HAS_KEYBOARD and not HAS_PYAUTOGUI:
+                    ui.notify("Install keyboard or pyautogui for Chrome tab switching.", type="negative")
+                    return None
+            else:
+                key = _resolved_key()
+                if not key:
+                    ui.notify("Please choose or enter a key to press.", type="negative")
+                    return None
+                if not HAS_KEYBOARD and not HAS_PYAUTOGUI:
+                    ui.notify("Install keyboard or pyautogui for key triggers.", type="negative")
+                    return None
+                cfg["key"] = key
+
+            configs.append(cfg)
+
+        return configs
 
     def start_clicked():
-        cfg = gather_config()
-        if cfg is None:
+        configs = gather_configs()
+        if not configs:
             return
 
         def delayed_start():
-            for i in range(int(cfg["delay"]), 0, -1):
+            delay = configs[0]["delay"]
+            for i in range(int(delay), 0, -1):
                 enqueue_log(f"Starting in {i}...")
                 time.sleep(1)
-            engine.start(cfg)
+            engine.start(configs)
 
         start_btn.disable()
         stop_btn.enable()
@@ -906,6 +1121,7 @@ def main_page():
                 break
             if action == "toggle" and _trigger_toggle is not None:
                 _trigger_toggle()
+                _minimize_window()
 
     ui.timer(0.1, process_actions)
 
