@@ -1,0 +1,47 @@
+# Virtual environments
+.venv/
+.venv-build/
+venv/
+env/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# PyInstaller
+build/
+dist/
+*.manifest
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Local tooling / IDE
+.kilo/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local app settings
+flip_clock_settings.json
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini

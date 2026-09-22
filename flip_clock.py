@@ -10,6 +10,11 @@ A desktop app built with NiceGUI (https://nicegui.io/) that:
 Dependencies:
     pip install nicegui pyautogui keyboard pywebview
 
+Features:
+    - Flip-clock display (HH:MM:SS + AM/PM)
+    - Time triggers (mouse / keyboard)
+    - Optional Windows capture exclusion (hide from screen share / screenshots)
+
 Run:
     python flip_clock.py
 """
@@ -25,6 +30,11 @@ import time
 from pathlib import Path
 
 from nicegui import app, ui
+
+import capture_privacy
+
+WINDOW_TITLE = capture_privacy.WINDOW_TITLE
+DEFAULT_HIDE_FROM_CAPTURE = capture_privacy.DEFAULT_HIDE_FROM_CAPTURE
 
 # ---- Optional automation libraries -----------------------------------
 try:
@@ -56,6 +66,26 @@ APP_DIR = _app_dir()
 ICON_PATH = APP_DIR / "icons8-digital-clock-100.png"
 ICON_ICO_PATH = APP_DIR / "icons8-digital-clock.ico"
 APP_PORT = 8080
+
+
+def _get_hide_from_capture() -> bool:
+    return capture_privacy.read_hide_from_capture()
+
+
+def _set_hide_from_capture(enabled: bool) -> None:
+    capture_privacy.write_hide_from_capture(enabled)
+
+
+def _exit_fullscreen() -> None:
+    try:
+        window = getattr(getattr(app, "native", None), "main_window", None)
+        if window is not None:
+            window.toggle_fullscreen()
+            return
+    except Exception:
+        pass
+    ui.notify("Could not exit fullscreen.", type="warning")
+
 
 KEY_ALIASES = {
     "spacebar": "space",
@@ -142,6 +172,9 @@ body, .nicegui-content {
     top: 0.5rem;
     right: 0.5rem;
     z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
 }
 
 .menu-btn {
@@ -626,11 +659,38 @@ def enqueue_log(msg: str):
 
 def _build_time_triggers_panel(dialog_close):
     with ui.element("div").classes("settings-header"):
-        ui.label("Time Triggers").classes("text-h6")
+        ui.label("Settings").classes("text-h6")
         ui.button(icon="close", on_click=dialog_close).props("flat round dense").classes(
             "settings-close-btn"
         ).tooltip("Close")
 
+    with ui.element("div").classes("triggers-section"):
+        ui.label("Privacy").classes("text-subtitle2 q-mb-xs")
+        hide_switch = ui.switch(
+            "Hide from screen share / screenshots",
+            value=_get_hide_from_capture(),
+        ).props("dense color=primary")
+        ui.label(
+            "When on, this window is excluded from most screen captures and share sessions "
+            "(Windows 10 2004+). You still see the clock on your display."
+        ).classes("text-caption text-grey q-mt-xs")
+
+        def on_hide_toggle(e):
+            enabled = bool(e.value)
+            _set_hide_from_capture(enabled)
+            if sys.platform != "win32":
+                ui.notify("Capture exclusion is only available on Windows.", type="warning")
+            else:
+                ui.notify(
+                    "Hidden from screen share (applies within ~1s)."
+                    if enabled
+                    else "Visible in screen share (applies within ~1s).",
+                    type="positive",
+                )
+
+        hide_switch.on_value_change(on_hide_toggle)
+
+    ui.label("Time Triggers").classes("text-subtitle2 q-mt-md")
     ui.label("Repeat mouse clicks or keyboard presses on a timer.").classes("text-caption text-grey")
 
     with ui.element("div").classes("triggers-section"):
@@ -855,7 +915,18 @@ def main_page():
 
     with ui.element("div").classes("clock-shell"):
         with ui.element("div").classes("clock-toolbar"):
-            settings_btn = ui.button(icon="settings").props("flat round dense no-caps").classes("menu-btn")
+            exit_fs_btn = (
+                ui.button(icon="fullscreen_exit")
+                .props("flat round dense no-caps")
+                .classes("menu-btn")
+                .tooltip("Exit fullscreen")
+            )
+            settings_btn = (
+                ui.button(icon="settings")
+                .props("flat round dense no-caps")
+                .classes("menu-btn")
+                .tooltip("Settings")
+            )
 
         with ui.element("div").classes("clock-face"):
             with ui.element("div").classes("digits-row"):
@@ -897,6 +968,7 @@ def main_page():
         _build_time_triggers_panel(triggers_dialog.close)
 
     settings_btn.on_click(triggers_dialog.open)
+    exit_fs_btn.on_click(_exit_fullscreen)
 
     def process_actions():
         while True:
@@ -937,6 +1009,7 @@ def run_app() -> None:
     global APP_PORT
 
     mp.freeze_support()
+    capture_privacy.install_nicegui_hook()
     app.native.window_args["resizable"] = True
 
     from nicegui.native.native_mode import find_open_port
@@ -948,7 +1021,7 @@ def run_app() -> None:
     favicon_arg = str(favicon) if favicon else None
 
     ui.run(
-        title="Flip Clock",
+        title=WINDOW_TITLE,
         favicon=favicon_arg,
         native=True,
         port=APP_PORT,
