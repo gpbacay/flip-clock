@@ -19,7 +19,16 @@ datas = [
     ("icons8-digital-clock.ico", "."),
 ]
 binaries = []
-hiddenimports = ["clr", "pythonnet", "capture_privacy", "multiprocessing"]
+hiddenimports = [
+    "clr",
+    "pythonnet",
+    "capture_privacy",
+    "multiprocessing",
+    "win32gui",
+    "win32con",
+    "win32api",
+    "pywintypes",
+]
 
 ng_datas, ng_binaries, ng_hidden = collect_all("nicegui")
 datas += ng_datas
