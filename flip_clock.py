@@ -24,12 +24,14 @@ Run:
 
 from __future__ import annotations
 
+import copy
 import datetime
 import multiprocessing as mp
 import queue
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 
 from nicegui import app, ui
@@ -513,22 +515,58 @@ body, .nicegui-content {
     50%      { opacity: 0.35; }
 }
 
+.settings-dialog.q-dialog {
+    position: fixed !important;
+    inset: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+.settings-dialog .q-dialog__inner,
+.settings-dialog .q-dialog__inner--minimized {
+    max-width: min(1180px, 98vw) !important;
+    width: min(1180px, 98vw) !important;
+    margin: 0 auto !important;
+    padding: 1.25rem !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+.settings-dialog .q-dialog__inner > div,
+.settings-dialog .q-dialog__inner--minimized > div {
+    max-width: min(1180px, 98vw) !important;
+    width: min(1180px, 98vw) !important;
+}
 .settings-card {
-    width: min(600px, 94vw) !important;
-    max-height: min(88vh, 720px) !important;
-    height: auto !important;
+    width: min(1180px, 98vw) !important;
+    max-width: min(1180px, 98vw) !important;
+    min-width: min(900px, 96vw) !important;
+    max-height: min(92vh, 860px) !important;
+    height: min(92vh, 860px) !important;
     display: flex !important;
     flex-direction: column !important;
+    align-items: stretch !important;
     overflow: hidden !important;
     background: #1a1a1e !important;
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
     border-radius: 14px !important;
-    padding: 1rem 0.35rem 1rem 1.25rem !important;
+    padding: 1rem 1rem 1rem 1.25rem !important;
     box-sizing: border-box !important;
 }
 .q-dialog__inner--minimized > .settings-card,
 .q-dialog__inner > .q-card.settings-card {
-    max-height: min(88vh, 720px) !important;
+    width: min(1180px, 98vw) !important;
+    max-width: min(1180px, 98vw) !important;
+    min-width: min(900px, 96vw) !important;
+    max-height: min(92vh, 860px) !important;
+    height: min(92vh, 860px) !important;
+    align-items: stretch !important;
+}
+.settings-card > * {
+    width: 100% !important;
+    max-width: 100% !important;
+    align-self: stretch !important;
+    box-sizing: border-box !important;
 }
 
 .triggers-backdrop {
@@ -542,12 +580,12 @@ body, .nicegui-content {
     justify-content: space-between;
     gap: 0.75rem;
     margin-bottom: 0.15rem;
-    padding-right: 0.9rem;
+    width: 100%;
     flex-shrink: 0;
 }
 
 .settings-subtitle {
-    padding-right: 0.9rem;
+    width: 100%;
     flex-shrink: 0;
 }
 
@@ -561,6 +599,7 @@ body, .nicegui-content {
     min-height: 2rem !important;
     min-width: 2rem !important;
     padding: 0 !important;
+    margin-left: auto !important;
 }
 .settings-close-btn::before,
 .settings-close-btn .q-focus-helper {
@@ -597,79 +636,289 @@ body, .nicegui-content {
     background: transparent;
 }
 
+.settings-tabs {
+    flex-shrink: 0;
+    width: 100% !important;
+    margin: 0.35rem 0 0.15rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.settings-tabs .q-tab {
+    min-height: 2.4rem;
+    padding: 0 0.9rem;
+    text-transform: none;
+    color: #a8a8a8 !important;
+}
+.settings-tabs .q-tab--active {
+    color: #ffffff !important;
+}
+.settings-tabs .q-tab__indicator {
+    background: #64b5f6 !important;
+    height: 2px;
+}
+.settings-tab-panels {
+    background: transparent !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+}
+.settings-tab-panels > .q-panel,
+.settings-tab-panels .q-tab-panels__content,
+.settings-tab-panels .q-panel.scroll {
+    height: 100% !important;
+    width: 100% !important;
+    min-height: 0 !important;
+}
+.settings-tab-panels .q-tab-panel {
+    padding: 0.75rem 0 0.35rem 0 !important;
+    height: 100% !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+}
+.settings-tab-body {
+    height: 100%;
+    width: 100% !important;
+    min-height: 0;
+}
+.settings-tab-body-scroll {
+    height: 100%;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    box-sizing: border-box;
+}
+.settings-tab-body-scroll::-webkit-scrollbar {
+    width: 8px;
+}
+.settings-tab-body-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+}
+.settings-tab-body-scroll .q-field,
+.settings-tab-body-scroll .q-select,
+.settings-tab-body-scroll .q-input,
+.settings-tab-body-scroll .q-textarea {
+    width: 100% !important;
+    max-width: 100% !important;
+    color: #f0f0f0 !important;
+}
+.settings-tab-body-scroll .row,
+.settings-tab-body-scroll .q-row {
+    width: 100% !important;
+}
+
+/* Keep selected values / labels visible on the dark settings card */
+.settings-card .q-field {
+    color: #f0f0f0 !important;
+}
+.settings-card .q-field__native,
+.settings-card .q-field__input,
+.settings-card .q-field__prefix,
+.settings-card .q-field__suffix,
+.settings-card .q-field__marginal,
+.settings-card .q-select__dropdown-icon {
+    color: #f5f5f5 !important;
+    -webkit-text-fill-color: #f5f5f5 !important;
+    opacity: 1 !important;
+}
+.settings-card .q-field__native,
+.settings-card .q-field__control-container {
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+}
+.settings-card .q-field__native > span,
+.settings-card .q-field__native span {
+    color: #f5f5f5 !important;
+    -webkit-text-fill-color: #f5f5f5 !important;
+    opacity: 1 !important;
+}
+.settings-card .q-field__label,
+.settings-card .q-field--float .q-field__label {
+    color: rgba(255, 255, 255, 0.72) !important;
+}
+.settings-card .q-field--stacked .q-field__label {
+    position: relative !important;
+    transform: none !important;
+    top: auto !important;
+    left: auto !important;
+    margin-bottom: 0.15rem !important;
+    font-size: 0.78rem !important;
+    line-height: 1.2 !important;
+}
+.settings-card .q-field--stacked .q-field__control {
+    padding-top: 0 !important;
+}
+.settings-card .q-field--stacked .q-field__native,
+.settings-card .q-field--stacked .q-field__input {
+    padding-top: 0.15rem !important;
+    min-height: 1.4rem !important;
+}
+.settings-card .q-placeholder,
+.settings-card .q-field__native::placeholder,
+.settings-card .q-field__input::placeholder {
+    color: rgba(255, 255, 255, 0.4) !important;
+    -webkit-text-fill-color: rgba(255, 255, 255, 0.4) !important;
+    opacity: 1 !important;
+}
+.settings-card .q-checkbox__label {
+    color: #e8e8e8 !important;
+}
+
+.triggers-layout {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 0.9rem;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 100%;
+    box-sizing: border-box;
+}
+.triggers-log-pane {
+    flex: 0 0 32%;
+    max-width: 360px;
+    min-width: 240px;
+    position: sticky;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    max-height: calc(min(92vh, 860px) - 9rem);
+}
+.triggers-controls-pane {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    padding-bottom: 0.5rem;
+}
+
 .triggers-section {
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 10px;
-    padding: 0.85rem 1rem;
-    margin-top: 0.75rem;
+    padding: 0.75rem 0.9rem;
+    width: 100%;
+    box-sizing: border-box;
 }
 
-.log-box textarea {
-    font-family: 'Consolas', 'Courier New', monospace !important;
-    font-size: 0.78rem !important;
-    background: #0d0d0f !important;
-    color: #8bc34a !important;
-    border-radius: 8px !important;
-    min-height: 110px !important;
-    max-height: 160px !important;
+.saved-group-row {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.45rem 0.55rem;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    width: 100%;
+    box-sizing: border-box;
 }
-
-.settings-accordion {
-    display: block !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    align-self: stretch !important;
-    box-sizing: border-box !important;
-    margin-top: 0.55rem;
-    border-radius: 10px !important;
-    background: rgba(255, 255, 255, 0.03) !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
-    overflow: visible !important;
+.saved-group-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 0.85rem;
+    color: #e0e0e0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.saved-group-meta {
     flex-shrink: 0;
+    font-size: 0.72rem;
+    color: #90a4ae;
 }
-.settings-accordion + .settings-accordion {
-    margin-top: 0.45rem;
-}
-.settings-accordion .q-expansion-item__container {
-    width: 100% !important;
-    max-width: 100% !important;
-    display: block !important;
-    overflow: visible !important;
-}
-.settings-accordion .q-item {
-    width: 100% !important;
-    min-height: 2.6rem;
-    padding: 0.45rem 0.85rem !important;
-}
-.settings-accordion .q-item__section--main {
-    width: 100% !important;
-    flex: 1 1 auto !important;
-}
-.settings-accordion .q-item__label {
-    color: #f0f0f0 !important;
-    font-weight: 600 !important;
-    font-size: 0.92rem !important;
-}
-.settings-accordion .q-expansion-item__content {
-    width: 100% !important;
-    max-width: 100% !important;
-    box-sizing: border-box !important;
-    padding: 0 0.85rem 0.9rem !important;
-    max-height: min(42vh, 360px);
-    overflow-x: hidden !important;
-    overflow-y: auto !important;
+
+.now-executing-box,
+.queue-live-box,
+.status-log-box {
+    background: #0d0d0f;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 0.55rem 0.65rem;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 0.78rem;
+    color: #cfd8dc;
+    overflow-y: auto;
     overscroll-behavior: contain;
 }
-.settings-accordion .q-expansion-item__content::-webkit-scrollbar {
-    width: 7px;
+.now-executing-box {
+    min-height: 4.5rem;
+    max-height: 7rem;
+    color: #81d4fa;
 }
-.settings-accordion .q-expansion-item__content::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.16);
-    border-radius: 7px;
+.queue-live-box {
+    flex: 1 1 auto;
+    min-height: 8rem;
+    max-height: 14rem;
 }
-.settings-accordion .q-focus-helper {
-    display: none !important;
+.status-log-box {
+    flex: 1 1 auto;
+    min-height: 7rem;
+    max-height: 12rem;
+    color: #8bc34a;
+}
+.queue-live-item {
+    padding: 0.2rem 0.15rem;
+    border-radius: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.queue-live-item.active {
+    background: rgba(100, 181, 246, 0.18);
+    color: #e3f2fd;
+}
+.queue-live-item.idle {
+    color: #78909c;
+}
+
+.queue-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    max-height: 220px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+.queue-item-row {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.45rem 0.55rem;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+}
+.queue-item-row.selected {
+    border-color: rgba(100, 181, 246, 0.55);
+    background: rgba(100, 181, 246, 0.1);
+}
+.queue-item-row.active-run {
+    border-color: rgba(139, 195, 74, 0.55);
+}
+.queue-item-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 0.82rem;
+    color: #e0e0e0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.queue-item-type {
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    color: #90caf9;
+    background: rgba(100, 181, 246, 0.12);
+    border-radius: 999px;
+    padding: 0.1rem 0.45rem;
 }
 
 .alarm-banner {
@@ -782,19 +1031,97 @@ def _focus_chrome_window() -> bool:
         return False
 
 
-class TimeTriggerEngine:
-    """Runs one or more configured click/keypress loops concurrently.
+TRIGGER_TYPE_LABELS = {
+    "mouse": "Mouse Click",
+    "keyboard": "Keyboard Key",
+    "scroll": "Mouse Scroll",
+    "chrome_tab": "Chrome Tab Switch",
+}
 
-    Each enabled trigger type (mouse click, keyboard key, scroll, Chrome tab
-    switch) gets its own background thread and its own stop event, so e.g.
-    "Mouse Click" and "Chrome Tab Switch" run in parallel instead of being
-    mutually exclusive.
+
+def _summarize_trigger(config: dict) -> str:
+    mode = config.get("mode", "?")
+    interval = config.get("interval", 1)
+    if mode == "mouse":
+        return (
+            f"Click {config.get('button', 'left')} at "
+            f"({config.get('x')}, {config.get('y')}) · every {interval}s"
+        )
+    if mode == "keyboard":
+        key = config.get("key", "space")
+        return f"Press {key} · every {interval}s"
+    if mode == "scroll":
+        where = (
+            f" at ({config.get('x')}, {config.get('y')})"
+            if config.get("x") is not None
+            else " at cursor"
+        )
+        return (
+            f"Scroll {config.get('scroll_direction', 'down')} "
+            f"×{config.get('scroll_amount', 5)}{where} · every {interval}s"
+        )
+    if mode == "chrome_tab":
+        focus = " · focus Chrome" if config.get("focus_chrome", True) else ""
+        return f"Chrome tab {config.get('tab_direction', 'next')}{focus} · every {interval}s"
+    return str(mode)
+
+
+def _execute_trigger_once(config: dict, log) -> bool:
+    """Run one trigger action. Returns False if a hard error should stop the queue."""
+    mode = config["mode"]
+    x, y = config.get("x"), config.get("y")
+    button = config.get("button", "left")
+    key = config.get("key", "space")
+    scroll_direction = config.get("scroll_direction", "down")
+    scroll_amount = config.get("scroll_amount", 5)
+    tab_direction = config.get("tab_direction", "next")
+    focus_chrome = config.get("focus_chrome", True)
+
+    try:
+        if mode == "mouse":
+            if not HAS_PYAUTOGUI:
+                log("ERROR: pyautogui not installed. Run: pip install pyautogui")
+                return False
+            pyautogui.click(x=x, y=y, button=button)
+            log(f"Clicked ({button}) at ({x}, {y})")
+        elif mode == "scroll":
+            if not HAS_PYAUTOGUI:
+                log("ERROR: pyautogui not installed. Run: pip install pyautogui")
+                return False
+            clicks = scroll_amount if scroll_direction == "up" else -scroll_amount
+            pyautogui.scroll(clicks, x=x, y=y)
+            where = f" at ({x}, {y})" if x is not None else ""
+            log(f"Scrolled {scroll_direction} {scroll_amount}{where}")
+        elif mode == "chrome_tab":
+            if focus_chrome and not _focus_chrome_window():
+                log("WARNING: Chrome window not found; sending shortcut to current focus.")
+            combo = "ctrl+tab" if tab_direction == "next" else "ctrl+shift+tab"
+            _press_key(combo)
+            log(f"Switched Chrome tab ({tab_direction})")
+        else:
+            _press_key(key)
+            log(f"Pressed {_format_key_combo(_parse_key_combo(key))}")
+    except Exception as e:
+        log(f"ERROR during trigger: {e}")
+        return False
+    return True
+
+
+class TimeTriggerEngine:
+    """Runs per-type queues concurrently.
+
+    Each trigger type (mouse / keyboard / scroll / chrome_tab) has its own
+    ordered queue. Queues of different types run in parallel. Within a type,
+    items execute in order and the queue loops until stopped.
     """
 
-    def __init__(self, log_callback=None):
+    def __init__(self, log_callback=None, status_callback=None):
         self._threads: dict[str, threading.Thread] = {}
         self._stop_events: dict[str, threading.Event] = {}
+        self._lock = threading.Lock()
+        self._current: dict[str, dict] = {}
         self.log = log_callback or (lambda msg: None)
+        self.status = status_callback or (lambda mode, info: None)
 
     @property
     def running(self) -> bool:
@@ -803,20 +1130,39 @@ class TimeTriggerEngine:
     def active_modes(self) -> list[str]:
         return [mode for mode, t in self._threads.items() if t.is_alive()]
 
-    def start(self, configs):
-        """Start one thread per config. `configs` may be a single dict
-        (back-compat) or a list of per-trigger config dicts."""
-        if isinstance(configs, dict):
-            configs = [configs]
+    def current_status(self) -> dict[str, dict]:
+        with self._lock:
+            return copy.deepcopy(self._current)
 
-        for config in configs:
-            mode = config["mode"]
+    def start(self, queues: dict[str, list[dict]], *, delay: float = 0):
+        """Start one thread per non-empty type queue.
+
+        `queues` maps mode -> list of trigger configs (same mode). A single
+        dict or flat list is also accepted for back-compat.
+        """
+        if isinstance(queues, dict) and "mode" in queues:
+            queues = {queues["mode"]: [queues]}
+        elif isinstance(queues, list):
+            grouped: dict[str, list[dict]] = {}
+            for cfg in queues:
+                grouped.setdefault(cfg["mode"], []).append(cfg)
+            queues = grouped
+
+        for mode, items in queues.items():
+            if not items:
+                continue
             existing = self._threads.get(mode)
             if existing is not None and existing.is_alive():
-                continue  # already running this trigger type
+                continue
             stop_event = threading.Event()
             self._stop_events[mode] = stop_event
-            thread = threading.Thread(target=self._run, args=(config, stop_event), daemon=True)
+            snapshot = copy.deepcopy(items)
+            thread = threading.Thread(
+                target=self._run_queue,
+                args=(mode, snapshot, stop_event, max(0.0, float(delay or 0))),
+                daemon=True,
+                name=f"trigger-{mode}",
+            )
             self._threads[mode] = thread
             thread.start()
 
@@ -825,73 +1171,65 @@ class TimeTriggerEngine:
             stop_event.set()
         self._threads.clear()
         self._stop_events.clear()
+        with self._lock:
+            self._current.clear()
+        self.status("__all__", {"state": "stopped"})
 
-    def _run(self, config, stop_event):
-        mode = config["mode"]
-        interval = config["interval"]
-        repeats = config["repeats"]
-        x, y = config.get("x"), config.get("y")
-        button = config.get("button", "left")
-        key = config.get("key", "space")
-        scroll_direction = config.get("scroll_direction", "down")
-        scroll_amount = config.get("scroll_amount", 5)
-        tab_direction = config.get("tab_direction", "next")
-        focus_chrome = config.get("focus_chrome", True)
+    def _set_current(self, mode: str, info: dict | None):
+        with self._lock:
+            if info is None:
+                self._current.pop(mode, None)
+            else:
+                self._current[mode] = info
+        self.status(mode, info or {"state": "idle", "mode": mode})
 
-        count = 0
-        labels = {
-            "mouse": "mouse click",
-            "keyboard": f"key '{key}'",
-            "scroll": f"mouse scroll ({scroll_direction})",
-            "chrome_tab": f"chrome tab switch ({tab_direction})",
-        }
-        self.log(f"Time trigger started ({labels.get(mode, mode)}) every {interval}s")
-
-        while not stop_event.is_set():
-            if repeats and count >= repeats:
-                break
-
-            try:
-                if mode == "mouse":
-                    if HAS_PYAUTOGUI:
-                        pyautogui.click(x=x, y=y, button=button)
-                        self.log(f"Clicked ({button}) at ({x}, {y})  [#{count + 1}]")
-                    else:
-                        self.log("ERROR: pyautogui not installed. Run: pip install pyautogui")
-                        break
-                elif mode == "scroll":
-                    if HAS_PYAUTOGUI:
-                        clicks = scroll_amount if scroll_direction == "up" else -scroll_amount
-                        pyautogui.scroll(clicks, x=x, y=y)
-                        where = f" at ({x}, {y})" if x is not None else ""
-                        self.log(f"Scrolled {scroll_direction} {scroll_amount}{where}  [#{count + 1}]")
-                    else:
-                        self.log("ERROR: pyautogui not installed. Run: pip install pyautogui")
-                        break
-                elif mode == "chrome_tab":
-                    if focus_chrome:
-                        if not _focus_chrome_window():
-                            self.log("WARNING: Chrome window not found; sending shortcut to current focus.")
-                    combo = "ctrl+tab" if tab_direction == "next" else "ctrl+shift+tab"
-                    _press_key(combo)
-                    self.log(f"Switched Chrome tab ({tab_direction})  [#{count + 1}]")
-                else:
-                    _press_key(key)
-                    self.log(f"Pressed {_format_key_combo(_parse_key_combo(key))}  [#{count + 1}]")
-            except Exception as e:
-                self.log(f"ERROR during trigger: {e}")
-                break
-
-            count += 1
+    def _run_queue(self, mode: str, items: list[dict], stop_event: threading.Event, delay: float):
+        label = TRIGGER_TYPE_LABELS.get(mode, mode)
+        if delay > 0:
+            self.log(f"{label} queue starting in {int(delay)}s…")
             slept = 0.0
-            step = 0.05
-            while slept < interval:
+            while slept < delay:
+                if stop_event.is_set():
+                    self._set_current(mode, None)
+                    self.log(f"{label} queue stopped.")
+                    return
+                time.sleep(min(0.05, delay - slept))
+                slept += 0.05
+
+        self.log(f"{label} queue started ({len(items)} item(s), looping).")
+        loop_n = 0
+        while not stop_event.is_set():
+            loop_n += 1
+            for idx, config in enumerate(items):
                 if stop_event.is_set():
                     break
-                time.sleep(min(step, interval - slept))
-                slept += step
+                summary = _summarize_trigger(config)
+                self._set_current(
+                    mode,
+                    {
+                        "state": "running",
+                        "mode": mode,
+                        "index": idx,
+                        "total": len(items),
+                        "loop": loop_n,
+                        "item_id": config.get("id"),
+                        "summary": summary,
+                    },
+                )
+                self.log(f"[{label} #{idx + 1}/{len(items)} · loop {loop_n}] {summary}")
+                if not _execute_trigger_once(config, self.log):
+                    stop_event.set()
+                    break
+                interval = max(0.05, float(config.get("interval", 1) or 1))
+                slept = 0.0
+                while slept < interval:
+                    if stop_event.is_set():
+                        break
+                    time.sleep(min(0.05, interval - slept))
+                    slept += 0.05
 
-        self.log(f"Time trigger stopped ({labels.get(mode, mode)}).")
+        self._set_current(mode, None)
+        self.log(f"{label} queue stopped.")
 
 
 # =========================================================================
@@ -1080,8 +1418,12 @@ class FlipDigit:
 #  APPLICATION STATE
 # =========================================================================
 log_queue: queue.Queue[str] = queue.Queue()
+status_queue: queue.Queue[tuple[str, dict | None]] = queue.Queue()
 action_queue: queue.Queue[str] = queue.Queue()
-engine = TimeTriggerEngine(log_callback=lambda msg: log_queue.put(msg))
+engine = TimeTriggerEngine(
+    log_callback=lambda msg: log_queue.put(msg),
+    status_callback=lambda mode, info: status_queue.put((mode, info)),
+)
 alarm_engine = AlarmEngine()
 _trigger_toggle: callable | None = None
 
@@ -1090,424 +1432,502 @@ def enqueue_log(msg: str):
     log_queue.put(msg)
 
 
-def _expansion(title: str, icon: str, *, value: bool = False):
-    """Dark-themed accordion section used in Settings (one open at a time)."""
-    return (
-        ui.expansion(title, icon=icon, value=value)
-        .classes("w-full settings-accordion")
-        .style("width: 100%; max-width: 100%; display: block;")
-        .props(
-            'dense dark expand-separator group="settings-acc" '
-            "header-class='text-weight-medium'"
-        )
-    )
-
-
 def _build_time_triggers_panel(dialog_close):
-    with ui.element("div").classes("settings-header"):
+    with ui.element("div").classes("settings-header w-full"):
         ui.label("Settings").classes("text-h6")
         ui.button(icon="close", on_click=dialog_close).props(
             "flat round dense unelevated no-caps"
         ).classes("settings-close-btn").tooltip("Close")
 
-    ui.label("Organize options below. Use Ctrl+Esc anytime to quit Flip Clock.").classes(
-        "text-caption text-grey q-mb-xs settings-subtitle"
+    ui.label("Use Ctrl+Esc anytime to quit Flip Clock.").classes(
+        "text-caption text-grey q-mb-xs settings-subtitle w-full"
     )
 
-    with ui.element("div").classes("settings-scroll"):
-        _build_settings_sections()
+    with ui.tabs().classes("w-full settings-tabs").props("dense align=left") as tabs:
+        privacy_tab = ui.tab("Privacy", icon="visibility_off")
+        alarm_tab = ui.tab("Alarm Clock", icon="alarm")
+        triggers_tab = ui.tab("Time Triggers", icon="timer")
 
+    with ui.tab_panels(tabs, value=privacy_tab).classes("w-full settings-tab-panels"):
+        with ui.tab_panel(privacy_tab).classes("settings-tab-body"):
+            with ui.element("div").classes("settings-tab-body-scroll"):
+                _build_privacy_section()
+        with ui.tab_panel(alarm_tab).classes("settings-tab-body"):
+            with ui.element("div").classes("settings-tab-body-scroll"):
+                _build_alarm_section()
+        with ui.tab_panel(triggers_tab).classes("settings-tab-body"):
+            with ui.element("div").classes(
+                "settings-tab-body-scroll settings-triggers-scroll"
+            ):
+                _build_triggers_section()
 
-def _build_settings_sections():
-    # ---- Privacy --------------------------------------------------------
-    with _expansion("Privacy", "visibility_off", value=True):
-        hide_switch = ui.switch(
-            "Hide from screen share, screenshots & taskbar",
-            value=_get_hide_from_capture(),
-        ).props("dense color=primary")
-        ui.label(
-            "When on, this window is excluded from most screen captures/share sessions "
-            "and removed from the main taskbar. A Flip Clock icon stays in the notification "
-            "area (▲ hidden icons). You still see the clock on your display."
-        ).classes("text-caption text-grey q-mt-xs")
-
-        def on_hide_toggle(e):
-            enabled = bool(e.value)
-            _set_hide_from_capture(enabled)
-            if sys.platform != "win32":
-                ui.notify("Capture exclusion is only available on Windows.", type="warning")
-            else:
-                ui.notify(
-                    "Hidden from screen share; tray icon in ▲ menu (applies within ~1s)."
-                    if enabled
-                    else "Visible in screen share & taskbar (applies within ~1s).",
-                    type="positive",
-                )
-
-        hide_switch.on_value_change(on_hide_toggle)
-
-    # ---- Alarm ----------------------------------------------------------
-    alarm_cfg = alarm_engine.config
-    with _expansion("Alarm Clock", "alarm"):
-        alarm_enable = ui.switch("Enable alarm", value=bool(alarm_cfg.get("enabled"))).props(
-            "dense color=orange"
-        )
-        with ui.row().classes("w-full q-gutter-sm q-mt-sm items-end"):
-            alarm_hour = ui.number(
-                "Hour",
-                value=int(alarm_cfg.get("hour", 7)),
-                min=1,
-                max=12,
-                step=1,
-                format="%.0f",
-            ).classes("col")
-            alarm_minute = ui.number(
-                "Minute",
-                value=int(alarm_cfg.get("minute", 0)),
-                min=0,
-                max=59,
-                step=1,
-                format="%.0f",
-            ).classes("col")
-            alarm_ampm = ui.select(
-                ["AM", "PM"], value=alarm_cfg.get("ampm", "AM"), label="AM/PM"
-            ).classes("col")
-        with ui.row().classes("w-full q-gutter-sm q-mt-sm items-end"):
-            alarm_label = ui.input("Label", value=str(alarm_cfg.get("label") or "Alarm")).classes(
-                "col"
-            )
-            alarm_snooze = ui.number(
-                "Snooze (min)",
-                value=int(alarm_cfg.get("snooze_minutes", 5)),
-                min=1,
-                max=60,
-                step=1,
-                format="%.0f",
-            ).classes("col")
-        alarm_sound = ui.switch(
-            "Play sound when ringing", value=bool(alarm_cfg.get("sound", True))
-        ).props("dense color=orange")
-        ui.label("Alarm fires at the set time while Flip Clock is open.").classes(
-            "text-caption text-grey q-mt-xs"
-        )
-        alarm_status = ui.label("").classes("text-caption text-grey q-mt-xs")
-
-        def _refresh_alarm_status():
-            if not alarm_enable.value:
-                alarm_status.set_text("Alarm is off.")
-                return
-            try:
-                h = int(alarm_hour.value or 7)
-                m = int(alarm_minute.value or 0)
-            except (TypeError, ValueError):
-                h, m = 7, 0
-            label = (alarm_label.value or "Alarm").strip() or "Alarm"
-            alarm_status.set_text(f"Armed: {label} at {h:02d}:{m:02d} {alarm_ampm.value}")
-
-        def _persist_alarm():
-            try:
-                hour = max(1, min(12, int(alarm_hour.value or 7)))
-            except (TypeError, ValueError):
-                hour = 7
-                alarm_hour.value = hour
-            try:
-                minute = max(0, min(59, int(alarm_minute.value or 0)))
-            except (TypeError, ValueError):
-                minute = 0
-                alarm_minute.value = minute
-            try:
-                snooze = max(1, min(60, int(alarm_snooze.value or 5)))
-            except (TypeError, ValueError):
-                snooze = 5
-                alarm_snooze.value = snooze
-            cfg = {
-                "enabled": bool(alarm_enable.value),
-                "hour": hour,
-                "minute": minute,
-                "ampm": alarm_ampm.value or "AM",
-                "label": (alarm_label.value or "Alarm").strip() or "Alarm",
-                "sound": bool(alarm_sound.value),
-                "snooze_minutes": snooze,
+    ui.run_javascript(
+        """
+        (() => {
+          if (window.__flipClockTriggersWheelBound) return;
+          window.__flipClockTriggersWheelBound = true;
+          document.addEventListener('wheel', (e) => {
+            const scrollEl = e.target && e.target.closest
+              ? e.target.closest('.settings-triggers-scroll')
+              : null;
+            if (!scrollEl) return;
+            const nested = e.target.closest(
+              '.now-executing-box, .queue-live-box, .status-log-box, .queue-list, textarea'
+            );
+            if (nested && nested !== scrollEl) {
+              const canNestedScroll = nested.scrollHeight > nested.clientHeight + 1;
+              const atTop = nested.scrollTop <= 0;
+              const atBottom =
+                nested.scrollTop + nested.clientHeight >= nested.scrollHeight - 1;
+              if (canNestedScroll && !((e.deltaY < 0 && atTop) || (e.deltaY > 0 && atBottom))) {
+                return;
+              }
             }
-            alarm_engine.save(cfg)
-            _refresh_alarm_status()
+            scrollEl.scrollTop += e.deltaY;
+            e.preventDefault();
+          }, { passive: false });
+        })();
+        """
+    )
 
-        for ctrl in (
-            alarm_enable,
-            alarm_hour,
-            alarm_minute,
-            alarm_ampm,
-            alarm_label,
-            alarm_snooze,
-            alarm_sound,
-        ):
-            ctrl.on_value_change(lambda _e: _persist_alarm())
+def _build_privacy_section():
+    hide_switch = ui.switch(
+        "Hide Flip Clock",
+        value=_get_hide_from_capture(),
+    ).props("dense color=primary")
+
+    def on_hide_toggle(e):
+        enabled = bool(e.value)
+        _set_hide_from_capture(enabled)
+        if sys.platform != "win32":
+            ui.notify("Capture exclusion is only available on Windows.", type="warning")
+        else:
+            ui.notify(
+                "Hidden from screen share; tray icon in ▲ menu (applies within ~1s)."
+                if enabled
+                else "Visible in screen share & taskbar (applies within ~1s).",
+                type="positive",
+            )
+
+    hide_switch.on_value_change(on_hide_toggle)
+
+
+def _build_alarm_section():
+    alarm_cfg = alarm_engine.config
+    alarm_enable = ui.switch("Enable alarm", value=bool(alarm_cfg.get("enabled"))).props(
+        "dense color=orange"
+    )
+    with ui.row().classes("w-full q-gutter-sm q-mt-sm items-end"):
+        alarm_hour = ui.number(
+            "Hour",
+            value=int(alarm_cfg.get("hour", 7)),
+            min=1,
+            max=12,
+            step=1,
+            format="%.0f",
+        ).props("dark dense").classes("col")
+        alarm_minute = ui.number(
+            "Minute",
+            value=int(alarm_cfg.get("minute", 0)),
+            min=0,
+            max=59,
+            step=1,
+            format="%.0f",
+        ).props("dark dense").classes("col")
+        alarm_ampm = ui.select(
+            ["AM", "PM"], value=alarm_cfg.get("ampm", "AM"), label="AM/PM"
+        ).props("dark dense options-dark").classes("col")
+    with ui.row().classes("w-full q-gutter-sm q-mt-sm items-end"):
+        alarm_label = ui.input(
+            "Label", value=str(alarm_cfg.get("label") or "Alarm")
+        ).props("dark dense").classes("col")
+        alarm_snooze = ui.number(
+            "Snooze (min)",
+            value=int(alarm_cfg.get("snooze_minutes", 5)),
+            min=1,
+            max=60,
+            step=1,
+            format="%.0f",
+        ).props("dark dense").classes("col")
+    alarm_sound = ui.switch(
+        "Play sound when ringing", value=bool(alarm_cfg.get("sound", True))
+    ).props("dense color=orange")
+    ui.label("Alarm fires at the set time while Flip Clock is open.").classes(
+        "text-caption text-grey q-mt-xs"
+    )
+    alarm_status = ui.label("").classes("text-caption text-grey q-mt-xs")
+
+    def _refresh_alarm_status():
+        if not alarm_enable.value:
+            alarm_status.set_text("Alarm is off.")
+            return
+        try:
+            h = int(alarm_hour.value or 7)
+            m = int(alarm_minute.value or 0)
+        except (TypeError, ValueError):
+            h, m = 7, 0
+        label = (alarm_label.value or "Alarm").strip() or "Alarm"
+        alarm_status.set_text(f"Armed: {label} at {h:02d}:{m:02d} {alarm_ampm.value}")
+
+    def _persist_alarm():
+        try:
+            hour = max(1, min(12, int(alarm_hour.value or 7)))
+        except (TypeError, ValueError):
+            hour = 7
+            alarm_hour.value = hour
+        try:
+            minute = max(0, min(59, int(alarm_minute.value or 0)))
+        except (TypeError, ValueError):
+            minute = 0
+            alarm_minute.value = minute
+        try:
+            snooze = max(1, min(60, int(alarm_snooze.value or 5)))
+        except (TypeError, ValueError):
+            snooze = 5
+            alarm_snooze.value = snooze
+        cfg = {
+            "enabled": bool(alarm_enable.value),
+            "hour": hour,
+            "minute": minute,
+            "ampm": alarm_ampm.value or "AM",
+            "label": (alarm_label.value or "Alarm").strip() or "Alarm",
+            "sound": bool(alarm_sound.value),
+            "snooze_minutes": snooze,
+        }
+        alarm_engine.save(cfg)
         _refresh_alarm_status()
 
-        with ui.row().classes("w-full q-mt-sm q-gutter-sm"):
-            ui.button(
-                "Save Alarm",
-                icon="save",
-                on_click=lambda: (_persist_alarm(), ui.notify("Alarm saved.", type="positive")),
-            ).props("outline dense color=orange").classes("col")
+    for ctrl in (
+        alarm_enable,
+        alarm_hour,
+        alarm_minute,
+        alarm_ampm,
+        alarm_label,
+        alarm_snooze,
+        alarm_sound,
+    ):
+        ctrl.on_value_change(lambda _e: _persist_alarm())
+    _refresh_alarm_status()
 
-    # ---- Time Triggers --------------------------------------------------
-    with _expansion("Time Triggers", "timer", value=False):
-        ui.label(
-            "Repeat mouse clicks, keyboard presses, scrolling, or Chrome tab switching on a timer. "
-            "Enable more than one — they run in parallel, each on its own thread."
-        ).classes("text-caption text-grey q-mb-sm")
+    with ui.row().classes("w-full q-mt-sm q-gutter-sm"):
+        ui.button(
+            "Save Alarm",
+            icon="save",
+            on_click=lambda: (_persist_alarm(), ui.notify("Alarm saved.", type="positive")),
+        ).props("outline dense color=orange").classes("col")
 
-        ui.label("Trigger types (select any combination)").classes("text-subtitle2 q-mb-xs")
-        with ui.row().classes("w-full q-gutter-md items-center"):
-            enable_mouse_chk = ui.checkbox("Mouse Click", value=True)
-            enable_key_chk = ui.checkbox("Keyboard Key")
-            enable_scroll_chk = ui.checkbox("Mouse Scroll")
-            enable_chrome_chk = ui.checkbox("Chrome Tab Switch")
 
-        with ui.element("div").classes("q-mt-sm") as mouse_section:
-            ui.label("Mouse target").classes("text-subtitle2 q-mb-xs")
-            with ui.row().classes("w-full q-gutter-sm items-center"):
-                x_input = ui.number("X", value=500, format="%.0f").classes("col")
-                y_input = ui.number("Y", value=500, format="%.0f").classes("col")
-                pick_btn = ui.button("Pick Location", icon="my_location").props("outline dense")
-            with ui.row().classes("w-full q-mt-sm"):
-                button_select = ui.select(
-                    ["left", "right", "middle"], value="left", label="Button"
-                ).classes("col")
+def _build_triggers_section():
+    TYPE_OPTIONS = [
+        "Mouse Click",
+        "Keyboard Key",
+        "Mouse Scroll",
+        "Chrome Tab Switch",
+    ]
+    MODE_FROM_LABEL = {
+        "Mouse Click": "mouse",
+        "Keyboard Key": "keyboard",
+        "Mouse Scroll": "scroll",
+        "Chrome Tab Switch": "chrome_tab",
+    }
 
-        with ui.element("div").classes("q-mt-sm") as key_section:
-            ui.label("Keyboard target").classes("text-subtitle2 q-mb-xs")
-            with ui.row().classes("w-full q-mt-sm items-center q-gutter-sm"):
-                mod_alt = ui.checkbox("Alt")
-                mod_ctrl = ui.checkbox("Ctrl")
-                mod_shift = ui.checkbox("Shift")
-            with ui.row().classes("w-full q-mt-sm items-end q-gutter-sm"):
-                key_select = ui.select(COMMON_KEYS, value="alt+tab", label="Key").classes("col")
-                key_input = (
-                    ui.input("Or type combo", value="")
-                    .props("placeholder='alt+tab'")
-                    .classes("col")
-                )
-            ui.label("Use modifiers + key, pick a preset, or type combos like alt+tab.").classes(
-                "text-caption text-grey q-mt-xs"
-            )
+    queue_items: list[dict] = []
+    live_status: dict[str, dict] = {}
+    log_lines: list[str] = []
+    views: dict = {}
+    saved_groups: list[dict] = list(capture_privacy.read_trigger_queue_groups())
 
-        with ui.element("div").classes("q-mt-sm") as scroll_section:
-            ui.label("Scroll settings").classes("text-subtitle2 q-mb-xs")
-            with ui.row().classes("w-full q-gutter-sm items-center"):
-                scroll_direction_select = ui.select(
-                    ["Down", "Up"], value="Down", label="Direction"
-                ).classes("col")
-                scroll_amount_input = ui.number(
-                    "Amount (clicks)", value=5, min=1, step=1, format="%.0f"
-                ).classes("col")
-            with ui.row().classes("w-full q-mt-sm items-center"):
-                scroll_interval_input = ui.number(
-                    "Scroll every (sec)", value=1.0, min=0.05, step=0.1
-                ).classes("col")
-            ui.label(
-                "Uses its own timer above, independent of the shared Schedule interval below."
-            ).classes("text-caption text-grey q-mt-xs")
-            scroll_here_chk = ui.checkbox("Scroll at current cursor position", value=True)
-            with ui.row().classes("w-full q-mt-sm items-center") as scroll_pos_row:
-                scroll_x_input = ui.number("X", value=500, format="%.0f").classes("col")
-                scroll_y_input = ui.number("Y", value=500, format="%.0f").classes("col")
-                scroll_pick_btn = ui.button("Pick Location", icon="my_location").props(
-                    "outline dense"
-                )
-            scroll_pos_row.set_visibility(False)
-            scroll_here_chk.on_value_change(
-                lambda: scroll_pos_row.set_visibility(not scroll_here_chk.value)
-            )
+    with ui.element("div").classes("triggers-layout"):
+        # ---- Left: live execution + log --------------------------------
+        with ui.element("div").classes("triggers-log-pane"):
+            ui.label("Now executing").classes("text-subtitle2")
+            now_box = ui.element("div").classes("now-executing-box")
+            with now_box:
+                ui.label("Idle — add items to a queue, then Start.").classes("text-caption")
 
-        with ui.element("div").classes("q-mt-sm") as chrome_section:
-            ui.label("Chrome tab switching").classes("text-subtitle2 q-mb-xs")
-            tab_direction_radio = ui.radio(["Next", "Previous"], value="Next").props(
-                "inline dense"
-            )
-            focus_chrome_chk = ui.checkbox("Bring Chrome window to front first", value=True)
-            with ui.row().classes("w-full q-mt-sm items-center"):
-                chrome_interval_input = ui.number(
-                    "Switch tabs every (sec)", value=5.0, min=0.1, step=0.5
-                ).classes("col")
-            ui.label(
-                "Sends Ctrl+Tab / Ctrl+Shift+Tab to cycle through open Chrome tabs."
-            ).classes("text-caption text-grey q-mt-xs")
-            ui.label(
-                "Uses its own timer above, independent of the shared Schedule interval below."
-            ).classes("text-caption text-grey")
-            if not HAS_WIN32:
+            ui.label("Queue (live)").classes("text-subtitle2 q-mt-sm")
+            live_box = ui.element("div").classes("queue-live-box")
+
+            ui.label("Status Log").classes("text-subtitle2 q-mt-sm")
+            log_box = ui.element("div").classes("status-log-box")
+
+            def _render_now():
+                now_box.clear()
+                with now_box:
+                    if not live_status:
+                        ui.label("Idle — add items to a queue, then Start.").classes(
+                            "text-caption"
+                        )
+                        return
+                    for mode, info in live_status.items():
+                        if not info or info.get("state") != "running":
+                            continue
+                        label = TRIGGER_TYPE_LABELS.get(mode, mode)
+                        ui.label(
+                            f"{label}: #{info.get('index', 0) + 1}/{info.get('total', 0)} "
+                            f"· loop {info.get('loop', 1)}"
+                        )
+                        ui.label(str(info.get("summary") or "")).classes("text-caption")
+
+            def _render_live_queue():
+                live_box.clear()
+                with live_box:
+                    if not queue_items:
+                        ui.label("Queue is empty.").classes("text-caption idle")
+                        return
+                    active_ids = {
+                        info.get("item_id")
+                        for info in live_status.values()
+                        if info and info.get("state") == "running"
+                    }
+                    by_mode: dict[str, list[dict]] = {}
+                    for item in queue_items:
+                        by_mode.setdefault(item["mode"], []).append(item)
+                    for mode, items in by_mode.items():
+                        ui.label(TRIGGER_TYPE_LABELS.get(mode, mode)).classes(
+                            "text-caption q-mt-xs"
+                        )
+                        for i, item in enumerate(items):
+                            classes = "queue-live-item"
+                            if item.get("id") in active_ids:
+                                classes += " active"
+                            ui.label(f"{i + 1}. {_summarize_trigger(item)}").classes(
+                                classes
+                            )
+
+            def _render_log():
+                log_box.clear()
+                with log_box:
+                    if not log_lines:
+                        ui.label("No activity yet.").classes("text-caption")
+                        return
+                    for line in log_lines[-60:]:
+                        ui.label(line)
+
+            def append_log(msg: str):
+                stamp = datetime.datetime.now().strftime("%H:%M:%S")
+                log_lines.append(f"[{stamp}] {msg}")
+                if len(log_lines) > 120:
+                    del log_lines[:-80]
+                _render_log()
+
+            def drain_queues():
+                while True:
+                    try:
+                        append_log(log_queue.get_nowait())
+                    except queue.Empty:
+                        break
+                changed = False
+                while True:
+                    try:
+                        mode, info = status_queue.get_nowait()
+                    except queue.Empty:
+                        break
+                    changed = True
+                    if mode == "__all__" or info is None or (
+                        isinstance(info, dict)
+                        and info.get("state") in ("stopped", "idle")
+                    ):
+                        if mode == "__all__":
+                            live_status.clear()
+                        else:
+                            live_status.pop(mode, None)
+                    elif isinstance(info, dict):
+                        live_status[mode] = info
+                if changed:
+                    _render_now()
+                    _render_live_queue()
+                    render_list = views.get("render_queue_list")
+                    if render_list:
+                        render_list()
+
+            views["append_log"] = append_log
+            views["render_now"] = _render_now
+            views["render_live_queue"] = _render_live_queue
+            ui.timer(0.15, drain_queues)
+            _render_now()
+            _render_live_queue()
+            _render_log()
+
+            if not HAS_PYAUTOGUI:
+                append_log("WARNING: pyautogui not found. pip install pyautogui")
+            if not HAS_KEYBOARD:
+                append_log("NOTE: install 'keyboard' for reliable key triggers and hotkeys")
+
+        # ---- Right: builder + queue CRUD --------------------------------
+        with ui.element("div").classes("triggers-controls-pane"):
+            with ui.element("div").classes("triggers-section"):
+                ui.label("Add trigger").classes("text-subtitle2 q-mb-xs")
+                type_select = ui.select(
+                    TYPE_OPTIONS, value="Mouse Click", label="Trigger type"
+                ).props("dark dense options-dark").classes("w-full")
+
+                with ui.element("div").classes("q-mt-sm") as mouse_section:
+                    with ui.row().classes("w-full q-gutter-sm items-center"):
+                        x_input = ui.number("X", value=500, format="%.0f").props(
+                            "dark dense"
+                        ).classes("col")
+                        y_input = ui.number("Y", value=500, format="%.0f").props(
+                            "dark dense"
+                        ).classes("col")
+                        pick_btn = ui.button("Pick Location", icon="my_location").props(
+                            "outline dense"
+                        )
+                    with ui.row().classes("w-full q-mt-sm"):
+                        button_select = ui.select(
+                            ["left", "right", "middle"], value="left", label="Button"
+                        ).props("dark dense options-dark").classes("col")
+
+                with ui.element("div").classes("q-mt-sm") as key_section:
+                    with ui.row().classes("w-full items-center q-gutter-sm"):
+                        mod_alt = ui.checkbox("Alt").props("dark dense")
+                        mod_ctrl = ui.checkbox("Ctrl").props("dark dense")
+                        mod_shift = ui.checkbox("Shift").props("dark dense")
+                    with ui.row().classes("w-full q-mt-sm items-end q-gutter-sm"):
+                        key_select = ui.select(
+                            COMMON_KEYS, value="alt+tab", label="Key"
+                        ).props("dark dense options-dark").classes("col")
+                        key_input = (
+                            ui.input("Or type combo", value="")
+                            .props("dark dense stack-label placeholder=alt+tab")
+                            .classes("col")
+                        )
+
+                with ui.element("div").classes("q-mt-sm") as scroll_section:
+                    with ui.row().classes("w-full q-gutter-sm items-center"):
+                        scroll_direction_select = ui.select(
+                            ["Down", "Up"], value="Down", label="Direction"
+                        ).props("dark dense options-dark").classes("col")
+                        scroll_amount_input = ui.number(
+                            "Amount (clicks)", value=5, min=1, step=1, format="%.0f"
+                        ).props("dark dense").classes("col")
+                    scroll_here_chk = ui.checkbox(
+                        "Scroll at current cursor position", value=True
+                    ).props("dark dense")
+                    with ui.row().classes("w-full q-mt-sm items-center") as scroll_pos_row:
+                        scroll_x_input = ui.number(
+                            "X", value=500, format="%.0f"
+                        ).props("dark dense").classes("col")
+                        scroll_y_input = ui.number(
+                            "Y", value=500, format="%.0f"
+                        ).props("dark dense").classes("col")
+                        scroll_pick_btn = ui.button(
+                            "Pick Location", icon="my_location"
+                        ).props("outline dense")
+                    scroll_pos_row.set_visibility(False)
+                    scroll_here_chk.on_value_change(
+                        lambda: scroll_pos_row.set_visibility(not scroll_here_chk.value)
+                    )
+
+                with ui.element("div").classes("q-mt-sm") as chrome_section:
+                    tab_direction_radio = ui.radio(
+                        ["Next", "Previous"], value="Next"
+                    ).props("inline dense dark")
+                    focus_chrome_chk = ui.checkbox(
+                        "Bring Chrome window to front first", value=True
+                    ).props("dark dense")
+
+                with ui.row().classes("w-full q-gutter-sm q-mt-sm"):
+                    interval_input = ui.number(
+                        "Interval (sec)", value=1.0, min=0.05, step=0.1
+                    ).props("dark dense").classes("col")
+                    delay_input = ui.number(
+                        "Start delay (sec)", value=3, min=0, step=1, format="%.0f"
+                    ).props("dark dense").classes("col")
+
+                def refresh_type_visibility():
+                    selected = type_select.value
+                    mouse_section.set_visibility(selected == "Mouse Click")
+                    key_section.set_visibility(selected == "Keyboard Key")
+                    scroll_section.set_visibility(selected == "Mouse Scroll")
+                    chrome_section.set_visibility(selected == "Chrome Tab Switch")
+
+                type_select.on_value_change(lambda _e: refresh_type_visibility())
+                refresh_type_visibility()
+
+                with ui.row().classes("w-full q-mt-md q-gutter-sm"):
+                    add_btn = ui.button(
+                        "Add to queue", icon="playlist_add", color="primary"
+                    ).classes("col")
+                    clear_form_btn = ui.button("Clear form", icon="restart_alt").props(
+                        "outline dense"
+                    ).classes("col-auto")
+
+            with ui.element("div").classes("triggers-section"):
+                ui.label("Queues by type").classes("text-subtitle2 q-mb-xs")
                 ui.label(
-                    "NOTE: install 'pywin32' to auto-focus Chrome before switching."
-                ).classes("text-caption text-orange q-mt-xs")
+                    "Different types run in parallel. Items of the same type loop in order."
+                ).classes("text-caption text-grey q-mb-sm")
+                queue_list_box = ui.element("div").classes("queue-list")
 
-        with ui.element("div").classes("q-mt-sm"):
-            ui.label("Schedule").classes("text-subtitle2 q-mb-xs")
-            ui.label(
-                "Applies to Mouse Click / Keyboard Key. "
-                "Mouse Scroll and Chrome Tab Switch use their own intervals above."
-            ).classes("text-caption text-grey")
-            with ui.row().classes("w-full q-gutter-sm q-mt-sm"):
-                interval_input = ui.number(
-                    "Interval (sec)", value=1.0, min=0.05, step=0.1
-                ).classes("col")
-                repeats_input = ui.number(
-                    "Repeats (0 = ∞)", value=0, min=0, step=1, format="%.0f"
-                ).classes("col")
-                delay_input = ui.number(
-                    "Start delay (sec)", value=3, min=0, step=1, format="%.0f"
-                ).classes("col")
+                with ui.row().classes("w-full q-mt-sm q-gutter-sm items-end"):
+                    group_name_input = ui.input(
+                        "Group name", value=""
+                    ).props(
+                        "dark dense stack-label placeholder='e.g. Work tabs'"
+                    ).classes("col")
+                    save_btn = ui.button("Save", icon="save").props(
+                        "outline dense"
+                    ).classes("col-auto")
+                    start_btn = ui.button(
+                        "Start", icon="play_arrow", color="green"
+                    ).classes("col-auto")
+                    stop_btn = ui.button("Stop", icon="stop", color="red").classes(
+                        "col-auto"
+                    )
+                    stop_btn.disable()
 
-        def refresh_visibility():
-            mouse_section.set_visibility(enable_mouse_chk.value)
-            key_section.set_visibility(enable_key_chk.value)
-            scroll_section.set_visibility(enable_scroll_chk.value)
-            chrome_section.set_visibility(enable_chrome_chk.value)
+                ui.label(
+                    "Start always saves the current queues under the group name first."
+                ).classes("text-caption text-grey q-mt-xs")
 
-        for _chk in (enable_mouse_chk, enable_key_chk, enable_scroll_chk, enable_chrome_chk):
-            _chk.on_value_change(refresh_visibility)
-        refresh_visibility()
+                hotkey_note = (
+                    "F6 toggles start/stop and minimizes · Ctrl+Esc quits"
+                    if HAS_KEYBOARD
+                    else "Install 'keyboard' for F6 / Ctrl+Esc hotkeys"
+                )
+                ui.label(hotkey_note).classes("text-caption text-grey q-mt-xs")
 
-        with ui.row().classes("w-full q-mt-md q-gutter-sm"):
-            start_btn = ui.button("Start", icon="play_arrow", color="green").classes("col")
-            stop_btn = ui.button("Stop", icon="stop", color="red").classes("col")
-            stop_btn.disable()
+            with ui.element("div").classes("triggers-section"):
+                ui.label("Saved queue groups").classes("text-subtitle2 q-mb-xs")
+                ui.label(
+                    "Load a saved combination into the queues, or delete it."
+                ).classes("text-caption text-grey q-mb-sm")
+                saved_groups_box = ui.element("div").classes("queue-list")
 
-        hotkey_note = (
-            "Global hotkey F6 toggles start/stop and minimizes the clock window · Ctrl+Esc quits"
-            if HAS_KEYBOARD
-            else "Install 'keyboard' for F6 / Ctrl+Esc hotkeys"
-        )
-        ui.label(hotkey_note).classes("text-caption text-grey q-mt-xs")
+            def _resolved_key() -> str:
+                custom = (key_input.value or "").strip()
+                if custom:
+                    return _format_key_combo(_parse_key_combo(custom))
+                selected = (key_select.value or "space").strip()
+                if "+" in selected:
+                    return _format_key_combo(_parse_key_combo(selected))
+                parts: list[str] = []
+                if mod_ctrl.value:
+                    parts.append("ctrl")
+                if mod_alt.value:
+                    parts.append("alt")
+                if mod_shift.value:
+                    parts.append("shift")
+                main = _normalize_key(selected)
+                if main not in parts:
+                    parts.append(main)
+                return _format_key_combo(parts) if parts else "space"
 
-        ui.label("Status Log").classes("text-subtitle2 q-mt-md q-mb-xs")
-        log_area = ui.textarea().props("readonly outlined").classes("w-full log-box")
-        log_area.value = ""
-
-        def append_log(msg: str):
-            stamp = datetime.datetime.now().strftime("%H:%M:%S")
-            log_area.value = (log_area.value + f"[{stamp}] {msg}\n").lstrip()
-            if log_area.value.count("\n") > 80:
-                log_area.value = "\n".join(log_area.value.splitlines()[-80:])
-            log_area.update()
-
-        def drain_log_queue():
-            while True:
+            def build_item_from_form() -> dict | None:
+                mode = MODE_FROM_LABEL.get(type_select.value or "")
+                if not mode:
+                    ui.notify("Choose a trigger type.", type="negative")
+                    return None
                 try:
-                    append_log(log_queue.get_nowait())
-                except queue.Empty:
-                    break
+                    interval = max(0.05, float(interval_input.value or 1))
+                except (TypeError, ValueError):
+                    ui.notify("Interval must be a number.", type="negative")
+                    return None
 
-        ui.timer(0.15, drain_log_queue)
+                cfg: dict = {"mode": mode, "interval": interval}
 
-        if not HAS_PYAUTOGUI:
-            append_log("WARNING: pyautogui not found. pip install pyautogui")
-        if not HAS_KEYBOARD:
-            append_log("NOTE: install 'keyboard' for reliable key triggers and hotkeys")
-
-        def make_pick_location(target_x_input, target_y_input, trigger_btn):
-            def pick_location():
-                if not HAS_PYAUTOGUI:
-                    ui.notify("Install pyautogui first: pip install pyautogui", type="negative")
-                    return
-                append_log("Move mouse to target... capturing in 3 seconds.")
-                trigger_btn.disable()
-                start_btn.disable()
-
-                def countdown():
-                    for i in (3, 2, 1):
-                        enqueue_log(f"Capturing in {i}...")
-                        time.sleep(1)
-                    pos = pyautogui.position()
-                    target_x_input.value = pos.x
-                    target_y_input.value = pos.y
-                    target_x_input.update()
-                    target_y_input.update()
-                    enqueue_log(f"Captured location: ({pos.x}, {pos.y})")
-                    trigger_btn.enable()
-                    start_btn.enable()
-
-                threading.Thread(target=countdown, daemon=True).start()
-
-            return pick_location
-
-        pick_btn.on_click(make_pick_location(x_input, y_input, pick_btn))
-        scroll_pick_btn.on_click(
-            make_pick_location(scroll_x_input, scroll_y_input, scroll_pick_btn)
-        )
-
-        def _resolved_key() -> str:
-            custom = (key_input.value or "").strip()
-            if custom:
-                return _format_key_combo(_parse_key_combo(custom))
-
-            selected = (key_select.value or "space").strip()
-            if "+" in selected:
-                return _format_key_combo(_parse_key_combo(selected))
-
-            parts: list[str] = []
-            if mod_ctrl.value:
-                parts.append("ctrl")
-            if mod_alt.value:
-                parts.append("alt")
-            if mod_shift.value:
-                parts.append("shift")
-
-            main = _normalize_key(selected)
-            if main not in parts:
-                parts.append(main)
-            return _format_key_combo(parts) if parts else "space"
-
-        def gather_configs():
-            """Build one config per enabled trigger-type checkbox. All enabled
-            types start together, but each runs on its own thread."""
-            try:
-                interval = max(0.05, float(interval_input.value or 1))
-            except (TypeError, ValueError):
-                ui.notify("Interval must be a number.", type="negative")
-                return None
-            try:
-                repeats = int(repeats_input.value or 0)
-            except (TypeError, ValueError):
-                ui.notify("Repeats must be an integer.", type="negative")
-                return None
-            try:
-                delay = max(0, float(delay_input.value or 0))
-            except (TypeError, ValueError):
-                delay = 0
-
-            selected_types = []
-            if enable_mouse_chk.value:
-                selected_types.append("Mouse Click")
-            if enable_key_chk.value:
-                selected_types.append("Keyboard Key")
-            if enable_scroll_chk.value:
-                selected_types.append("Mouse Scroll")
-            if enable_chrome_chk.value:
-                selected_types.append("Chrome Tab Switch")
-
-            if not selected_types:
-                ui.notify("Select at least one trigger type.", type="negative")
-                return None
-
-            mode_map = {
-                "Mouse Click": "mouse",
-                "Keyboard Key": "keyboard",
-                "Mouse Scroll": "scroll",
-                "Chrome Tab Switch": "chrome_tab",
-            }
-
-            configs = []
-            for selected in selected_types:
-                cfg = {
-                    "mode": mode_map[selected],
-                    "interval": interval,
-                    "repeats": repeats,
-                    "delay": delay,
-                }
-
-                if selected == "Mouse Click":
+                if mode == "mouse":
                     if not HAS_PYAUTOGUI:
                         ui.notify("Mouse triggers require pyautogui.", type="negative")
                         return None
@@ -1518,50 +1938,7 @@ def _build_settings_sections():
                         ui.notify("X and Y must be integers.", type="negative")
                         return None
                     cfg["button"] = button_select.value
-                elif selected == "Mouse Scroll":
-                    if not HAS_PYAUTOGUI:
-                        ui.notify("Mouse scroll requires pyautogui.", type="negative")
-                        return None
-                    try:
-                        cfg["interval"] = max(0.05, float(scroll_interval_input.value or 1))
-                    except (TypeError, ValueError):
-                        ui.notify("Scroll interval must be a number.", type="negative")
-                        return None
-                    try:
-                        cfg["scroll_amount"] = max(1, int(scroll_amount_input.value or 5))
-                    except (TypeError, ValueError):
-                        ui.notify("Scroll amount must be an integer.", type="negative")
-                        return None
-                    cfg["scroll_direction"] = (scroll_direction_select.value or "Down").lower()
-                    if scroll_here_chk.value:
-                        cfg["x"] = None
-                        cfg["y"] = None
-                    else:
-                        try:
-                            cfg["x"] = int(scroll_x_input.value)
-                            cfg["y"] = int(scroll_y_input.value)
-                        except (TypeError, ValueError):
-                            ui.notify("X and Y must be integers.", type="negative")
-                            return None
-                elif selected == "Chrome Tab Switch":
-                    try:
-                        cfg["interval"] = max(0.1, float(chrome_interval_input.value or 5))
-                    except (TypeError, ValueError):
-                        ui.notify(
-                            "Chrome tab switch interval must be a number.", type="negative"
-                        )
-                        return None
-                    cfg["tab_direction"] = (
-                        "next" if tab_direction_radio.value == "Next" else "previous"
-                    )
-                    cfg["focus_chrome"] = bool(focus_chrome_chk.value)
-                    if not HAS_KEYBOARD and not HAS_PYAUTOGUI:
-                        ui.notify(
-                            "Install keyboard or pyautogui for Chrome tab switching.",
-                            type="negative",
-                        )
-                        return None
-                else:
+                elif mode == "keyboard":
                     key = _resolved_key()
                     if not key:
                         ui.notify("Please choose or enter a key to press.", type="negative")
@@ -1572,43 +1949,293 @@ def _build_settings_sections():
                         )
                         return None
                     cfg["key"] = key
+                elif mode == "scroll":
+                    if not HAS_PYAUTOGUI:
+                        ui.notify("Mouse scroll requires pyautogui.", type="negative")
+                        return None
+                    try:
+                        cfg["scroll_amount"] = max(1, int(scroll_amount_input.value or 5))
+                    except (TypeError, ValueError):
+                        ui.notify("Scroll amount must be an integer.", type="negative")
+                        return None
+                    cfg["scroll_direction"] = (
+                        scroll_direction_select.value or "Down"
+                    ).lower()
+                    if scroll_here_chk.value:
+                        cfg["x"] = None
+                        cfg["y"] = None
+                    else:
+                        try:
+                            cfg["x"] = int(scroll_x_input.value)
+                            cfg["y"] = int(scroll_y_input.value)
+                        except (TypeError, ValueError):
+                            ui.notify("X and Y must be integers.", type="negative")
+                            return None
+                elif mode == "chrome_tab":
+                    cfg["tab_direction"] = (
+                        "next" if tab_direction_radio.value == "Next" else "previous"
+                    )
+                    cfg["focus_chrome"] = bool(focus_chrome_chk.value)
+                    if not HAS_KEYBOARD and not HAS_PYAUTOGUI:
+                        ui.notify(
+                            "Install keyboard or pyautogui for Chrome tab switching.",
+                            type="negative",
+                        )
+                        return None
+                return cfg
 
-                configs.append(cfg)
+            def _render_queue_list():
+                queue_list_box.clear()
+                with queue_list_box:
+                    if not queue_items:
+                        ui.label("No queued triggers yet.").classes(
+                            "text-caption text-grey"
+                        )
+                        return
+                    active_ids = {
+                        info.get("item_id")
+                        for info in live_status.values()
+                        if info and info.get("state") == "running"
+                    }
+                    by_mode: dict[str, list[dict]] = {}
+                    for item in queue_items:
+                        by_mode.setdefault(item["mode"], []).append(item)
+                    for mode, items in by_mode.items():
+                        ui.label(
+                            f"{TRIGGER_TYPE_LABELS.get(mode, mode)} queue ({len(items)})"
+                        ).classes("text-caption text-grey q-mt-xs")
+                        for item in items:
+                            classes = "queue-item-row"
+                            if item.get("id") in active_ids:
+                                classes += " active-run"
+                            with ui.element("div").classes(classes):
+                                ui.label(
+                                    TRIGGER_TYPE_LABELS.get(mode, mode)
+                                ).classes("queue-item-type")
+                                ui.label(_summarize_trigger(item)).classes(
+                                    "queue-item-text"
+                                )
 
-            return configs
+                                def _delete(i=item):
+                                    queue_items[:] = [
+                                        q for q in queue_items if q.get("id") != i.get("id")
+                                    ]
+                                    _render_queue_list()
+                                    _render_live_queue()
 
-        def start_clicked():
-            configs = gather_configs()
-            if not configs:
-                return
+                                ui.button(icon="delete", on_click=_delete).props(
+                                    "flat dense round color=negative"
+                                ).tooltip("Delete")
 
-            def delayed_start():
-                delay = configs[0]["delay"]
-                for i in range(int(delay), 0, -1):
-                    enqueue_log(f"Starting in {i}...")
-                    time.sleep(1)
-                engine.start(configs)
+            def _render_saved_groups():
+                saved_groups_box.clear()
+                with saved_groups_box:
+                    if not saved_groups:
+                        ui.label("No saved groups yet.").classes(
+                            "text-caption text-grey"
+                        )
+                        return
+                    for group in saved_groups:
+                        with ui.element("div").classes("saved-group-row"):
+                            ui.label(group.get("name") or "Untitled").classes(
+                                "saved-group-name"
+                            )
+                            ui.label(f"{len(group.get('items') or [])} items").classes(
+                                "saved-group-meta"
+                            )
 
-            start_btn.disable()
-            stop_btn.enable()
-            threading.Thread(target=delayed_start, daemon=True).start()
+                            def _load(g=group):
+                                queue_items.clear()
+                                for raw in g.get("items") or []:
+                                    item = copy.deepcopy(raw)
+                                    item["id"] = str(uuid.uuid4())
+                                    queue_items.append(item)
+                                try:
+                                    delay_input.value = float(g.get("delay") or 0)
+                                    delay_input.update()
+                                except (TypeError, ValueError):
+                                    pass
+                                group_name_input.value = g.get("name") or ""
+                                group_name_input.update()
+                                _render_queue_list()
+                                _render_live_queue()
+                                append_log(f"Loaded group “{g.get('name')}”.")
+                                ui.notify(f"Loaded “{g.get('name')}”.", type="positive")
 
-        def stop_clicked():
-            engine.stop()
-            start_btn.enable()
-            stop_btn.disable()
+                            def _delete_group(g=group):
+                                saved_groups[:] = [
+                                    x for x in saved_groups if x.get("id") != g.get("id")
+                                ]
+                                capture_privacy.write_trigger_queue_groups(saved_groups)
+                                _render_saved_groups()
+                                append_log(f"Deleted group “{g.get('name')}”.")
+                                ui.notify("Saved group deleted.", type="positive")
 
-        def toggle_from_hotkey():
-            if engine.running:
-                stop_clicked()
-            else:
-                start_clicked()
+                            ui.button("Load", icon="download", on_click=_load).props(
+                                "outline dense"
+                            )
+                            ui.button(icon="delete", on_click=_delete_group).props(
+                                "flat dense round color=negative"
+                            ).tooltip("Delete group")
 
-        global _trigger_toggle
-        _trigger_toggle = toggle_from_hotkey
+            views["render_queue_list"] = _render_queue_list
 
-        start_btn.on_click(start_clicked)
-        stop_btn.on_click(stop_clicked)
+            def add_to_queue():
+                cfg = build_item_from_form()
+                if cfg is None:
+                    return
+                cfg["id"] = str(uuid.uuid4())
+                queue_items.append(cfg)
+                append_log(f"Added to {TRIGGER_TYPE_LABELS[cfg['mode']]} queue.")
+                _render_queue_list()
+                _render_live_queue()
+                ui.notify("Added to queue.", type="positive")
+
+            def clear_form():
+                type_select.value = "Mouse Click"
+                type_select.update()
+                refresh_type_visibility()
+
+            def make_pick_location(target_x_input, target_y_input, trigger_btn):
+                def pick_location():
+                    if not HAS_PYAUTOGUI:
+                        ui.notify(
+                            "Install pyautogui first: pip install pyautogui", type="negative"
+                        )
+                        return
+                    append_log("Move mouse to target... capturing in 3 seconds.")
+                    trigger_btn.disable()
+
+                    def countdown():
+                        for i in (3, 2, 1):
+                            enqueue_log(f"Capturing in {i}...")
+                            time.sleep(1)
+                        pos = pyautogui.position()
+                        target_x_input.value = pos.x
+                        target_y_input.value = pos.y
+                        target_x_input.update()
+                        target_y_input.update()
+                        enqueue_log(f"Captured location: ({pos.x}, {pos.y})")
+                        trigger_btn.enable()
+
+                    threading.Thread(target=countdown, daemon=True).start()
+
+                return pick_location
+
+            pick_btn.on_click(make_pick_location(x_input, y_input, pick_btn))
+            scroll_pick_btn.on_click(
+                make_pick_location(scroll_x_input, scroll_y_input, scroll_pick_btn)
+            )
+
+            def grouped_queues() -> dict[str, list[dict]]:
+                grouped: dict[str, list[dict]] = {}
+                for item in queue_items:
+                    grouped.setdefault(item["mode"], []).append(item)
+                return grouped
+
+            def _persist_current_group(*, require_items: bool = True) -> tuple[str, float] | None:
+                """Save the current queues under the group name. Returns (name, delay) or None."""
+                if require_items and not queue_items:
+                    ui.notify("Add at least one trigger to the queue.", type="negative")
+                    return None
+                name = (group_name_input.value or "").strip()
+                if not name:
+                    ui.notify("Enter a group name to save.", type="negative")
+                    return None
+                try:
+                    delay = max(0, float(delay_input.value or 0))
+                except (TypeError, ValueError):
+                    delay = 0
+
+                existing = next(
+                    (g for g in saved_groups if g.get("name", "").lower() == name.lower()),
+                    None,
+                )
+                payload = {
+                    "id": existing["id"] if existing else str(uuid.uuid4()),
+                    "name": name[:80],
+                    "delay": delay,
+                    "items": copy.deepcopy(queue_items),
+                    "created_at": datetime.datetime.now().isoformat(timespec="seconds"),
+                }
+                if existing:
+                    for i, g in enumerate(saved_groups):
+                        if g.get("id") == existing["id"]:
+                            saved_groups[i] = payload
+                            break
+                else:
+                    saved_groups.insert(0, payload)
+                capture_privacy.write_trigger_queue_groups(saved_groups)
+                _render_saved_groups()
+                return name, delay
+
+            def save_clicked():
+                result = _persist_current_group()
+                if result is None:
+                    return
+                name, _delay = result
+                append_log(f"Saved group “{name}”.")
+                ui.notify(f"Saved “{name}”.", type="positive")
+
+            def start_clicked():
+                groups = grouped_queues()
+                if not groups:
+                    ui.notify("Add at least one trigger to the queue.", type="negative")
+                    return
+                result = _persist_current_group(require_items=False)
+                if result is None:
+                    return
+                name, delay = result
+
+                def delayed_start():
+                    engine.start(groups, delay=delay)
+
+                start_btn.disable()
+                save_btn.disable()
+                stop_btn.enable()
+                append_log(
+                    f"Saved “{name}” and starting: "
+                    + ", ".join(
+                        f"{TRIGGER_TYPE_LABELS.get(m, m)}×{len(v)}"
+                        for m, v in groups.items()
+                    )
+                )
+                ui.notify(f"Saved “{name}” and starting.", type="positive")
+                threading.Thread(target=delayed_start, daemon=True).start()
+
+            def stop_clicked():
+                engine.stop()
+                live_status.clear()
+                _render_now()
+                _render_live_queue()
+                _render_queue_list()
+                start_btn.enable()
+                save_btn.enable()
+                stop_btn.disable()
+                append_log("All queues stopped.")
+
+            def toggle_from_hotkey():
+                if engine.running:
+                    stop_clicked()
+                else:
+                    if not (group_name_input.value or "").strip():
+                        group_name_input.value = (
+                            f"Quick {datetime.datetime.now().strftime('%H:%M:%S')}"
+                        )
+                        group_name_input.update()
+                    start_clicked()
+
+            global _trigger_toggle
+            _trigger_toggle = toggle_from_hotkey
+
+            add_btn.on_click(add_to_queue)
+            clear_form_btn.on_click(clear_form)
+            save_btn.on_click(save_clicked)
+            start_btn.on_click(start_clicked)
+            stop_btn.on_click(stop_clicked)
+            _render_queue_list()
+            _render_saved_groups()
+
 
 # =========================================================================
 #  UI
@@ -1724,9 +2351,13 @@ def main_page():
 
     ui.timer(0.2, tick)
 
-    with ui.dialog() as triggers_dialog, ui.card().classes("settings-card"):
+    with ui.dialog().classes("settings-dialog") as triggers_dialog:
         triggers_dialog.props("backdrop-filter")
-        _build_time_triggers_panel(triggers_dialog.close)
+        with ui.card().classes("settings-card w-full").style(
+            "width: min(1180px, 98vw); max-width: min(1180px, 98vw); "
+            "min-width: min(900px, 96vw);"
+        ):
+            _build_time_triggers_panel(triggers_dialog.close)
 
     settings_btn.on_click(triggers_dialog.open)
     exit_fs_btn.on_click(_exit_fullscreen)

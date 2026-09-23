@@ -119,6 +119,53 @@ def write_alarm_settings(alarm: dict) -> None:
     write_settings({"alarm": alarm})
 
 
+def read_trigger_queue_groups() -> list[dict]:
+    """Return saved Time Trigger queue groups (newest-friendly list)."""
+    data = read_settings()
+    raw = data.get("trigger_queue_groups")
+    if not isinstance(raw, list):
+        return []
+    groups: list[dict] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("name") or "").strip()
+        items = entry.get("items")
+        if not name or not isinstance(items, list) or not items:
+            continue
+        groups.append(
+            {
+                "id": str(entry.get("id") or ""),
+                "name": name[:80],
+                "delay": float(entry.get("delay") or 0),
+                "items": [i for i in items if isinstance(i, dict) and i.get("mode")],
+                "created_at": str(entry.get("created_at") or ""),
+            }
+        )
+    return [g for g in groups if g["id"] and g["items"]]
+
+
+def write_trigger_queue_groups(groups: list[dict]) -> None:
+    cleaned: list[dict] = []
+    for entry in groups:
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("name") or "").strip()
+        items = entry.get("items")
+        if not name or not isinstance(items, list) or not items:
+            continue
+        cleaned.append(
+            {
+                "id": str(entry.get("id") or ""),
+                "name": name[:80],
+                "delay": float(entry.get("delay") or 0),
+                "items": [i for i in items if isinstance(i, dict)],
+                "created_at": str(entry.get("created_at") or ""),
+            }
+        )
+    write_settings({"trigger_queue_groups": cleaned})
+
+
 def _hwnd_from_native(native) -> int:
     if native is None:
         return 0
