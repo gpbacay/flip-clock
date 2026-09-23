@@ -1,6 +1,7 @@
 # PyInstaller build artifacts
 build/
 dist/
+FlipClock/
 *.manifest
 
 # Python bytecode / caches
@@ -10,6 +11,7 @@ __pycache__/
 
 # Virtual environments
 .venv/
+.venv-build/
 venv/
 env/
 
@@ -17,6 +19,9 @@ env/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Local tooling
+.kilo/
 
 # Editor
 .vscode/
